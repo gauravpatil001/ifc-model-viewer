@@ -78,6 +78,34 @@
         color: var(--muted);
       }
 
+      .section-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.3rem 0.55rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #f7fafc;
+        font-size: 0.85rem;
+      }
+
+      .section-controls select {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.2rem 0.35rem;
+        background: #fff;
+      }
+
+      .section-controls input[type="range"] {
+        width: 130px;
+      }
+
+      .section-value {
+        min-width: 42px;
+        text-align: right;
+        color: var(--muted);
+      }
+
       .hint {
         margin: 0;
         color: var(--muted);
@@ -187,6 +215,18 @@
             <label><input type="checkbox" id="filter-walls" checked />Walls</label>
             <label><input type="checkbox" id="filter-slabs" checked />Slabs</label>
             <label><input type="checkbox" id="filter-doors" checked />Doors</label>
+          </div>
+          <div class="section-controls">
+            <strong>Section</strong>
+            <select id="section-axis">
+              <option value="x">X</option>
+              <option value="y" selected>Y</option>
+              <option value="z">Z</option>
+            </select>
+            <input type="range" id="section-offset" min="-100" max="100" value="0" />
+            <span class="section-value" id="section-value">0%</span>
+            <button class="btn" id="section-apply" type="button">Apply</button>
+            <button class="btn" id="section-clear" type="button">Clear</button>
           </div>
           <label class="btn btn-primary" id="open-btn" for="file-input">Open IFC</label>
           <input type="file" id="file-input" accept=".ifc" />

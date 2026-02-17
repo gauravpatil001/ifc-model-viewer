@@ -11,6 +11,11 @@ const metaContentEl = document.getElementById("meta-content");
 const filterWallsEl = document.getElementById("filter-walls");
 const filterSlabsEl = document.getElementById("filter-slabs");
 const filterDoorsEl = document.getElementById("filter-doors");
+const sectionAxisEl = document.getElementById("section-axis");
+const sectionOffsetEl = document.getElementById("section-offset");
+const sectionValueEl = document.getElementById("section-value");
+const sectionApplyEl = document.getElementById("section-apply");
+const sectionClearEl = document.getElementById("section-clear");
 
 let loadIfc = null;
 let runtimeReady = false;
@@ -35,6 +40,7 @@ async function initViewer() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.localClippingEnabled = true;
     viewerRoot.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -56,6 +62,8 @@ async function initViewer() {
     let currentModel = null;
     let activePickTarget = null;
     let pointerDown = null;
+    let modelBounds = null;
+    let sectionActive = false;
     let allProductIds = new Set();
     const groupedTypeIds = {
       walls: new Set(),
@@ -120,6 +128,48 @@ async function initViewer() {
       controls.update();
     }
 
+    function buildSectionPlane(axis, offsetPercent) {
+      if (!modelBounds) return null;
+
+      const center = modelBounds.getCenter(new THREE.Vector3());
+      const point = center.clone();
+      const t = (offsetPercent + 100) / 200;
+      let normal = new THREE.Vector3(0, -1, 0);
+
+      if (axis === "x") {
+        point.x = THREE.MathUtils.lerp(modelBounds.min.x, modelBounds.max.x, t);
+        normal = new THREE.Vector3(-1, 0, 0);
+      } else if (axis === "y") {
+        point.y = THREE.MathUtils.lerp(modelBounds.min.y, modelBounds.max.y, t);
+        normal = new THREE.Vector3(0, -1, 0);
+      } else if (axis === "z") {
+        point.z = THREE.MathUtils.lerp(modelBounds.min.z, modelBounds.max.z, t);
+        normal = new THREE.Vector3(0, 0, -1);
+      }
+
+      return new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point);
+    }
+
+    function applySectionView() {
+      if (!currentModel || !modelBounds) {
+        statusEl.textContent = "Load a model before applying section view.";
+        return;
+      }
+
+      const axis = sectionAxisEl.value;
+      const offset = Number(sectionOffsetEl.value);
+      const plane = buildSectionPlane(axis, offset);
+      renderer.clippingPlanes = plane ? [plane] : [];
+      sectionActive = true;
+      statusEl.textContent = `Section view active (${axis.toUpperCase()} @ ${offset}%).`;
+    }
+
+    function clearSectionView() {
+      renderer.clippingPlanes = [];
+      sectionActive = false;
+      if (currentModel) statusEl.textContent = "Section view cleared.";
+    }
+
     async function collectTypeIds(modelID, typeCodes) {
       const out = new Set();
       for (const code of typeCodes) {
@@ -175,6 +225,7 @@ async function initViewer() {
         const model = await ifcLoader.loadAsync(url);
         currentModel = model;
         scene.add(model);
+        modelBounds = new THREE.Box3().setFromObject(model);
 
         const modelID = model.modelID;
         allProductIds = new Set(await ifcLoader.ifcManager.getAllItemsOfType(modelID, IFCPRODUCT, false));
@@ -182,6 +233,7 @@ async function initViewer() {
         groupedTypeIds.slabs = await collectTypeIds(modelID, [IFCSLAB]);
         groupedTypeIds.doors = await collectTypeIds(modelID, [IFCDOOR]);
         await updateVisibilityFilters();
+        if (sectionActive) applySectionView();
 
         fitCameraToObject(model);
         statusEl.textContent = `Loaded ${file.name}`;
@@ -241,6 +293,16 @@ async function initViewer() {
         });
       });
     }
+
+    sectionOffsetEl.addEventListener("input", () => {
+      sectionValueEl.textContent = `${sectionOffsetEl.value}%`;
+      if (sectionActive) applySectionView();
+    });
+    sectionAxisEl.addEventListener("change", () => {
+      if (sectionActive) applySectionView();
+    });
+    sectionApplyEl.addEventListener("click", applySectionView);
+    sectionClearEl.addEventListener("click", clearSectionView);
 
     window.addEventListener("resize", resizeRenderer);
     resizeRenderer();

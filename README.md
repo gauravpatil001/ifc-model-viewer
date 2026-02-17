@@ -4,9 +4,12 @@ This is a minimal browser-based IFC viewer with local dependencies (no runtime C
 
 ## What it does
 
-- Creates a basic 3D scene with camera controls.
 - Loads a local `.ifc` file via file picker.
-- Fits camera to the loaded model.
+- Uses a Z-up world/view setup for model navigation.
+- Fits camera to the loaded model automatically.
+- Lets you click IFC elements to inspect metadata (`modelID`, `expressID`, properties JSON).
+- Builds dynamic visibility filters from IFC categories present in the loaded model.
+- Supports section views with clipping planes (axis + offset).
 
 ## Main dependencies
 
@@ -30,7 +33,7 @@ IFCLoader (web-ifc-three)
 web-ifc.wasm (local /public/wasm)
       |
       v
-Three.js scene graph -> WebGL render in browser
+Model root (Z-up transform) -> Three.js scene graph -> WebGL render in browser
 ```
 
 ## Run locally
@@ -48,11 +51,18 @@ Then open:
 
 `http://localhost:5173`
 
-## Next steps
+## Viewer controls
 
-- Add element picking and metadata panel.
-- Add visibility filters by IFC type (walls, slabs, doors).
-- Add clipping planes and section views.
+- `Open IFC`: load a local IFC model.
+- `Visibility`: check/uncheck IFC categories generated from the loaded file.
+- `Section`: choose axis (`X`, `Y`, `Z`), set offset (`-100%` to `100%`), then `Apply` or `Clear`.
+- Click in viewport: pick element and inspect metadata in the right panel.
+- Orbit/pan/zoom: standard mouse controls via `OrbitControls`.
+
+## Notes
+
+- Category filters are generated per model, so available filter names vary by IFC file.
+- Section clipping is applied in the same Z-up aligned model space used for rendering.
 
 ## Troubleshooting
 

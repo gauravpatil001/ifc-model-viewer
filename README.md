@@ -8,6 +8,31 @@ This is a minimal browser-based IFC viewer with local dependencies (no runtime C
 - Loads a local `.ifc` file via file picker.
 - Fits camera to the loaded model.
 
+## Main dependencies
+
+- `three`: core 3D engine (scene, camera, lights, renderer, controls).
+- `web-ifc-three`: IFC loader integration for Three.js (`IFCLoader`) to parse and display IFC geometry.
+- `vite`: local dev server and bundler for fast module-based development.
+- Local `web-ifc` WASM binaries: WebAssembly runtime used by `web-ifc-three` to parse IFC files in the browser.
+
+## Architecture
+
+```text
+User selects .ifc
+      |
+      v
+UI (index.html + src/main.js)
+      |
+      v
+IFCLoader (web-ifc-three)
+      |
+      v
+web-ifc.wasm (local /public/wasm)
+      |
+      v
+Three.js scene graph -> WebGL render in browser
+```
+
 ## Run locally
 
 Install and start dev server:

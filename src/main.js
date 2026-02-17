@@ -1,16 +1,14 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
-import { IFCDOOR, IFCPRODUCT, IFCSLAB, IFCWALL, IFCWALLSTANDARDCASE } from "web-ifc";
+import { IFCPRODUCT } from "web-ifc";
 
 const viewerRoot = document.getElementById("viewer");
 const statusEl = document.getElementById("status");
 const fileInput = document.getElementById("file-input");
 const metaEmptyEl = document.getElementById("meta-empty");
 const metaContentEl = document.getElementById("meta-content");
-const filterWallsEl = document.getElementById("filter-walls");
-const filterSlabsEl = document.getElementById("filter-slabs");
-const filterDoorsEl = document.getElementById("filter-doors");
+const filterListEl = document.getElementById("filter-list");
 const sectionAxisEl = document.getElementById("section-axis");
 const sectionOffsetEl = document.getElementById("section-offset");
 const sectionValueEl = document.getElementById("section-value");
@@ -32,11 +30,14 @@ fileInput.addEventListener("change", async (event) => {
 
 async function initViewer() {
   try {
+    THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
+
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf4f7fa);
 
     const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000);
-    camera.position.set(12, 10, 12);
+    camera.up.set(0, 0, 1);
+    camera.position.set(12, -12, 10);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -45,16 +46,22 @@ async function initViewer() {
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.target.set(0, 1.5, 0);
+    controls.target.set(0, 0, 1.5);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
     const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-    dir.position.set(20, 25, 10);
+    dir.position.set(20, -25, 24);
     scene.add(dir);
 
     const grid = new THREE.GridHelper(60, 60, 0xb8c4d0, 0xd8e1e8);
+    grid.rotateX(Math.PI / 2);
     scene.add(grid);
     scene.add(new THREE.AxesHelper(2.5));
+
+    const modelRoot = new THREE.Group();
+    // IFC geometry is typically authored in Y-up; rotate once so world stays Z-up.
+    modelRoot.rotation.x = Math.PI / 2;
+    scene.add(modelRoot);
 
     const ifcLoader = new IFCLoader();
     ifcLoader.ifcManager.setWasmPath("/wasm/");
@@ -65,11 +72,7 @@ async function initViewer() {
     let modelBounds = null;
     let sectionActive = false;
     let allProductIds = new Set();
-    const groupedTypeIds = {
-      walls: new Set(),
-      slabs: new Set(),
-      doors: new Set(),
-    };
+    let typeGroups = new Map();
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -134,7 +137,7 @@ async function initViewer() {
       const center = modelBounds.getCenter(new THREE.Vector3());
       const point = center.clone();
       const t = (offsetPercent + 100) / 200;
-      let normal = new THREE.Vector3(0, -1, 0);
+      let normal = new THREE.Vector3(0, 0, -1);
 
       if (axis === "x") {
         point.x = THREE.MathUtils.lerp(modelBounds.min.x, modelBounds.max.x, t);
@@ -170,28 +173,65 @@ async function initViewer() {
       if (currentModel) statusEl.textContent = "Section view cleared.";
     }
 
-    async function collectTypeIds(modelID, typeCodes) {
-      const out = new Set();
-      for (const code of typeCodes) {
-        const ids = await ifcLoader.ifcManager.getAllItemsOfType(modelID, code, false);
-        for (const id of ids) out.add(id);
+    function buildDynamicFilterUI() {
+      filterListEl.innerHTML = "";
+      if (typeGroups.size === 0) {
+        const span = document.createElement("span");
+        span.className = "hint";
+        span.textContent = "No filterable IFC categories found.";
+        filterListEl.append(span);
+        return;
       }
-      return out;
+
+      const rows = Array.from(typeGroups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+      for (const [typeName, ids] of rows) {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = true;
+        input.dataset.typeName = typeName;
+        input.addEventListener("change", () => {
+          updateVisibilityFilters().catch((error) => {
+            console.error(error);
+            statusEl.textContent = "Failed to apply visibility filters.";
+          });
+        });
+        label.append(input, `${typeName} (${ids.size})`);
+        filterListEl.append(label);
+      }
+    }
+
+    async function buildTypeGroups(modelID) {
+      allProductIds = new Set(await ifcLoader.ifcManager.getAllItemsOfType(modelID, IFCPRODUCT, false));
+      typeGroups = new Map();
+
+      for (const expressID of allProductIds) {
+        const rawType = await ifcLoader.ifcManager.getIfcType(modelID, expressID);
+        const typeName = String(rawType || "UNKNOWN").toUpperCase();
+        if (!typeGroups.has(typeName)) typeGroups.set(typeName, new Set());
+        typeGroups.get(typeName).add(expressID);
+      }
     }
 
     async function updateVisibilityFilters() {
       if (!currentModel) return;
       const modelID = currentModel.modelID;
 
+      if (allProductIds.size === 0 || typeGroups.size === 0) {
+        ifcLoader.ifcManager.removeSubset(modelID, undefined, "visibility-filter");
+        activePickTarget = currentModel;
+        currentModel.visible = true;
+        renderer.render(scene, camera);
+        return;
+      }
+
       const hiddenIds = new Set();
-      if (!filterWallsEl.checked) {
-        for (const id of groupedTypeIds.walls) hiddenIds.add(id);
-      }
-      if (!filterSlabsEl.checked) {
-        for (const id of groupedTypeIds.slabs) hiddenIds.add(id);
-      }
-      if (!filterDoorsEl.checked) {
-        for (const id of groupedTypeIds.doors) hiddenIds.add(id);
+      const checkboxes = filterListEl.querySelectorAll("input[type='checkbox']");
+      for (const checkbox of checkboxes) {
+        if (checkbox.checked) continue;
+        const ids = typeGroups.get(checkbox.dataset.typeName);
+        if (!ids) continue;
+        for (const id of ids) hiddenIds.add(id);
       }
 
       const visibleIds = [];
@@ -202,13 +242,22 @@ async function initViewer() {
       ifcLoader.ifcManager.createSubset({
         modelID,
         ids: visibleIds,
-        scene,
+        scene: modelRoot,
         removePrevious: true,
         customID: "visibility-filter",
       });
 
       activePickTarget = ifcLoader.ifcManager.getSubset(modelID, undefined, "visibility-filter");
-      currentModel.visible = false;
+      if (visibleIds.length === 0) {
+        currentModel.visible = false;
+        activePickTarget = null;
+      } else if (!activePickTarget) {
+        currentModel.visible = true;
+        activePickTarget = currentModel;
+      } else {
+        currentModel.visible = false;
+      }
+
       renderer.render(scene, camera);
     }
 
@@ -218,25 +267,26 @@ async function initViewer() {
       try {
         if (currentModel) {
           ifcLoader.ifcManager.removeSubset(currentModel.modelID, undefined, "visibility-filter");
-          scene.remove(currentModel);
+          modelRoot.remove(currentModel);
           currentModel.geometry?.dispose?.();
         }
 
         const model = await ifcLoader.loadAsync(url);
         currentModel = model;
-        scene.add(model);
-        modelBounds = new THREE.Box3().setFromObject(model);
+        modelRoot.add(model);
+        modelBounds = new THREE.Box3().setFromObject(modelRoot);
 
-        const modelID = model.modelID;
-        allProductIds = new Set(await ifcLoader.ifcManager.getAllItemsOfType(modelID, IFCPRODUCT, false));
-        groupedTypeIds.walls = await collectTypeIds(modelID, [IFCWALL, IFCWALLSTANDARDCASE]);
-        groupedTypeIds.slabs = await collectTypeIds(modelID, [IFCSLAB]);
-        groupedTypeIds.doors = await collectTypeIds(modelID, [IFCDOOR]);
+        statusEl.textContent = `Loaded ${file.name}. Building category filters...`;
+        await buildTypeGroups(model.modelID);
+        buildDynamicFilterUI();
         await updateVisibilityFilters();
         if (sectionActive) applySectionView();
 
-        fitCameraToObject(model);
-        statusEl.textContent = `Loaded ${file.name}`;
+        fitCameraToObject(modelRoot);
+        statusEl.textContent = `Loaded ${file.name} (${typeGroups.size} categories)`;
+        if (allProductIds.size === 0) {
+          statusEl.textContent = `Loaded ${file.name} (filters unavailable for this model)`;
+        }
         setEmptyMetadata("Model loaded. Click an IFC element to inspect.");
       } catch (error) {
         console.error(error);
@@ -284,15 +334,6 @@ async function initViewer() {
         setEmptyMetadata("Failed to read metadata for selected element.");
       }
     });
-
-    for (const el of [filterWallsEl, filterSlabsEl, filterDoorsEl]) {
-      el.addEventListener("change", () => {
-        updateVisibilityFilters().catch((error) => {
-          console.error(error);
-          statusEl.textContent = "Failed to apply visibility filters.";
-        });
-      });
-    }
 
     sectionOffsetEl.addEventListener("input", () => {
       sectionValueEl.textContent = `${sectionOffsetEl.value}%`;

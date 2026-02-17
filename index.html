@@ -31,6 +31,12 @@
         height: 100vh;
       }
 
+      .content {
+        display: grid;
+        grid-template-columns: 1fr 340px;
+        min-height: 0;
+      }
+
       .toolbar {
         display: flex;
         align-items: center;
@@ -86,6 +92,7 @@
       #viewer {
         width: 100%;
         height: 100%;
+        min-height: 0;
       }
 
       #file-input {
@@ -95,6 +102,57 @@
         height: 1px;
         opacity: 0;
         pointer-events: none;
+      }
+
+      .panel {
+        border-left: 1px solid var(--border);
+        background: var(--panel);
+        padding: 0.8rem;
+        overflow: auto;
+      }
+
+      .panel h2 {
+        margin: 0 0 0.6rem;
+        font-size: 0.95rem;
+      }
+
+      .meta-empty {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .meta-block {
+        margin: 0 0 0.65rem;
+        font-size: 0.85rem;
+        line-height: 1.35;
+      }
+
+      .meta-block code {
+        font-size: 0.8rem;
+      }
+
+      .meta-json {
+        margin: 0;
+        padding: 0.6rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #f7fafc;
+        font-size: 0.78rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      @media (max-width: 980px) {
+        .content {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr 220px;
+        }
+
+        .panel {
+          border-left: none;
+          border-top: 1px solid var(--border);
+        }
       }
     </style>
   </head>
@@ -108,7 +166,14 @@
           <input type="file" id="file-input" accept=".ifc" />
         </div>
       </header>
-      <main id="viewer"></main>
+      <section class="content">
+        <main id="viewer"></main>
+        <aside class="panel">
+          <h2>Element Metadata</h2>
+          <p class="meta-empty" id="meta-empty">Click an IFC element to inspect its properties.</p>
+          <div id="meta-content"></div>
+        </aside>
+      </section>
     </div>
 
     <script type="module" src="./src/main.js"></script>

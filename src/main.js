@@ -5,6 +5,8 @@ import { IFCLoader } from "web-ifc-three/IFCLoader";
 const viewerRoot = document.getElementById("viewer");
 const statusEl = document.getElementById("status");
 const fileInput = document.getElementById("file-input");
+const metaEmptyEl = document.getElementById("meta-empty");
+const metaContentEl = document.getElementById("meta-content");
 
 let loadIfc = null;
 let runtimeReady = false;
@@ -47,6 +49,35 @@ async function initViewer() {
     const ifcLoader = new IFCLoader();
     ifcLoader.ifcManager.setWasmPath("/wasm/");
     let currentModel = null;
+    let pointerDown = null;
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function setEmptyMetadata(message) {
+      metaEmptyEl.textContent = message;
+      metaEmptyEl.style.display = "block";
+      metaContentEl.innerHTML = "";
+    }
+
+    function setMetadata(modelID, expressID, properties) {
+      metaEmptyEl.style.display = "none";
+      metaContentEl.innerHTML = "";
+
+      const modelLine = document.createElement("p");
+      modelLine.className = "meta-block";
+      modelLine.innerHTML = `<strong>Model ID:</strong> <code>${modelID}</code>`;
+
+      const expressLine = document.createElement("p");
+      expressLine.className = "meta-block";
+      expressLine.innerHTML = `<strong>Express ID:</strong> <code>${expressID}</code>`;
+
+      const pre = document.createElement("pre");
+      pre.className = "meta-json";
+      pre.textContent = JSON.stringify(properties, null, 2);
+
+      metaContentEl.append(modelLine, expressLine, pre);
+    }
 
     function resizeRenderer() {
       const width = viewerRoot.clientWidth;
@@ -90,6 +121,7 @@ async function initViewer() {
         scene.add(model);
         fitCameraToObject(model);
         statusEl.textContent = `Loaded ${file.name}`;
+        setEmptyMetadata("Model loaded. Click an IFC element to inspect.");
       } catch (error) {
         console.error(error);
         statusEl.textContent = "Failed to load IFC file. See browser console.";
@@ -97,6 +129,45 @@ async function initViewer() {
         URL.revokeObjectURL(url);
       }
     };
+
+    renderer.domElement.addEventListener("pointerdown", (event) => {
+      pointerDown = { x: event.clientX, y: event.clientY };
+    });
+
+    renderer.domElement.addEventListener("pointerup", async (event) => {
+      if (!currentModel || !pointerDown) return;
+
+      const dx = event.clientX - pointerDown.x;
+      const dy = event.clientY - pointerDown.y;
+      pointerDown = null;
+
+      if (Math.hypot(dx, dy) > 4) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const [hit] = raycaster.intersectObject(currentModel, true);
+      if (!hit || hit.faceIndex == null) {
+        setEmptyMetadata("No IFC element selected.");
+        return;
+      }
+
+      try {
+        const modelID = hit.object.modelID ?? currentModel.modelID;
+        const expressID = ifcLoader.ifcManager.getExpressId(hit.object.geometry, hit.faceIndex);
+        if (expressID == null || expressID < 0) {
+          setEmptyMetadata("No IFC element selected.");
+          return;
+        }
+        const properties = await ifcLoader.ifcManager.getItemProperties(modelID, expressID, true);
+        setMetadata(modelID, expressID, properties);
+      } catch (error) {
+        console.error(error);
+        setEmptyMetadata("Failed to read metadata for selected element.");
+      }
+    });
 
     window.addEventListener("resize", resizeRenderer);
     resizeRenderer();
@@ -110,6 +181,7 @@ async function initViewer() {
 
     runtimeReady = true;
     statusEl.textContent = "Viewer ready. Load an IFC file to begin.";
+    setEmptyMetadata("Click an IFC element to inspect its properties.");
   } catch (error) {
     console.error(error);
     runtimeReady = false;
